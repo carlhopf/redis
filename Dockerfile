@@ -1,37 +1,22 @@
-FROM alpine:3.15 as builder
+FROM redis:7.0.9 as builder
 
-MAINTAINER Opstree Solutions
+RUN apt-get update -qq
+RUN apt-get install -yq git 
+RUN git clone --recursive https://github.com/RediSearch/RediSearch.git /redisearch
 
-LABEL VERSION=1.0 \
-      ARCH=AMD64 \
-      DESCRIPTION="A production grade performance tuned redis docker image created by Opstree Solutions"
+WORKDIR /redisearch
 
-ARG REDIS_DOWNLOAD_URL="http://download.redis.io/"
+RUN git checkout v2.6.6
+RUN git submodule update --init --recursive
 
-ARG REDIS_VERSION="stable"
+RUN ./sbin/setup
+RUN bash -l
 
-RUN apk add --no-cache su-exec tzdata make curl build-base linux-headers bash openssl-dev
+RUN make setup
+RUN make build
 
-RUN curl -fL -Lo /tmp/redis-${REDIS_VERSION}.tar.gz ${REDIS_DOWNLOAD_URL}/redis-${REDIS_VERSION}.tar.gz && \
-    cd /tmp && \
-    tar xvzf redis-${REDIS_VERSION}.tar.gz && \
-    cd redis-${REDIS_VERSION} && \
-    make && \
-    make install BUILD_TLS=yes
 
-FROM alpine:3.15
-
-MAINTAINER Opstree Solutions
-
-LABEL VERSION=1.0 \
-      ARCH=AMD64 \
-      DESCRIPTION="A production grade performance tuned redis docker image created by Opstree Solutions"
-
-COPY --from=builder /usr/local/bin/redis-server /usr/local/bin/redis-server
-COPY --from=builder /usr/local/bin/redis-cli /usr/local/bin/redis-cli
-
-RUN addgroup -S -g 1000 redis && adduser -S -G redis -u 1000 redis && \
-    apk add --no-cache bash
+FROM redis:7.0.9
 
 COPY redis.conf /etc/redis/redis.conf
 
@@ -41,7 +26,8 @@ COPY setupMasterSlave.sh /usr/bin/setupMasterSlave.sh
 
 COPY healthcheck.sh /usr/bin/healthcheck.sh
 
-RUN chown -R redis:redis /etc/redis
+COPY --from=builder /redisearch/bin/linux-*-release/search/redisearch.so /etc/redis/redisearch.so
+
 
 VOLUME ["/data"]
 
@@ -49,6 +35,5 @@ WORKDIR /data
 
 EXPOSE 6379
 
-USER 1000
 
 ENTRYPOINT ["/usr/bin/entrypoint.sh"]
